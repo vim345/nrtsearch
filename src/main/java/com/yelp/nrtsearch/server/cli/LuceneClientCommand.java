@@ -28,6 +28,7 @@ import picocli.CommandLine;
     subcommands = {
       AddDocumentsCommand.class,
       BackupIndexCommand.class,
+      BackupWarmingQueriesCommand.class,
       CommitCommand.class,
       CreateIndexCommand.class,
       GetCurrentSearcherVersion.class,
@@ -35,6 +36,8 @@ import picocli.CommandLine;
       DeleteAllDocumentsCommand.class,
       DeleteIndexBackupCommand.class,
       DeleteIndexCommand.class,
+      ForceMergeCommand.class,
+      ForceMergeDeletesCommand.class,
       LiveSettingsCommand.class,
       RefreshCommand.class,
       RegisterFieldsCommand.class,

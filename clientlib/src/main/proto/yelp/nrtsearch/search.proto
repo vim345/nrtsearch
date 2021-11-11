@@ -10,6 +10,8 @@ option java_package = "com.yelp.nrtsearch.server.grpc";
 option java_outer_classname = "SearchResponseProto";
 option objc_class_prefix = "HLW";
 
+option go_package = "github.com/Yelp/nrtsearch";
+
 package luceneserver;
 
 // A clause in a BooleanQuery.
@@ -181,7 +183,7 @@ message RangeQuery {
     bool upperExclusive = 5; // Set true to make upper bound exclusive
 }
 
-// A query that matches documents with geopoint within the geo box. The topLeft and bottomRight values though provided as strings will be converted to the Double.
+// A query that matches documents with geopoint within the geo box.
 message GeoBoundingBoxQuery {
     string field = 1; // Field in the document to query
     google.type.LatLng topLeft = 2; // top left corner of the geo box
@@ -201,7 +203,7 @@ message GeoPointQuery {
     google.type.LatLng point = 2; // point used to query whether the polygon contains it.
 }
 
-// A query that matches documents which contain an value for a field.
+// A query that matches documents which contain a value for a field.
 message ExistsQuery {
     string field = 1; // Field in the document to query
 }
@@ -254,7 +256,7 @@ message Query {
 message SearchRequest {
     string indexName = 1; //index to search against
     int32 startHit = 2; // Which hit to start from (for pagination); default: 0
-    int32 topHits = 3; // How many top hits to retrieve; default: 10
+    int32 topHits = 3; // How many top hits to retrieve; default: 10. It limits the hits returned, starting from index 0. For pagination: set it to startHit + window_size.
     /* Maximum number of seconds spent on each collection phase; note that for
      * multi-pass searches (e.g. query-time grouping), this timeout applies to each phase. */
     double timeoutSec = 4;
@@ -274,6 +276,14 @@ message SearchRequest {
     bool disallowPartialResults = 16; //Should partial result be a failure condition. Applies when a search request times out. If false, the top documents ranking at the point of timeout are used and the request continues. Also, hitTimeout is set to true in the response.
     string queryNestedPath = 17; //nested path we want to query by if we want to query child documents.
     repeated Rescorer rescorers = 18; // Rescorers which are executed in-order after the first pass
+    //If detailed request execution profiling should be included in the response
+    bool profile = 19;
+    //Check the search timeout condition after each collection of n documents in a segment. If 0, timeout is only checked on the segment boundary.
+    int32 timeoutCheckEvery = 20;
+    //Additional document collectors. Provides support for operations such as aggregation.
+    map<string, Collector> collectors = 21;
+    //Stop document collection in search phase after this many documents, 0 for unlimited.
+    int32 terminateAfter = 22;
 }
 
 /* Virtual field used during search */
@@ -372,9 +382,10 @@ message Point {
 
 message SearchResponse {
     message Diagnostics {
-        string parsedQuery = 1;
-        string rewrittenQuery = 2;
-        string drillDownQuery = 3;
+        // Query debug has been moved to ProfileResult
+        string parsedQuery = 1 [deprecated = true];
+        string rewrittenQuery = 2 [deprecated = true];
+        string drillDownQuery = 3 [deprecated = true];
         double firstPassSearchTimeMs = 4;
         double highlightTimeMs = 5;
         double getFieldsTimeMs = 6;
@@ -382,6 +393,7 @@ message SearchResponse {
         double nrtWaitTimeMs = 8;
         map<string, double> facetTimeMs = 9;
         double rescoreTimeMs = 10;
+        map<string, double> rescorersTimeMs = 11;
     }
 
     message Hit {
@@ -417,11 +429,17 @@ message SearchResponse {
     }
 
     Diagnostics diagnostics = 1;
-    bool hitTimeout = 2;
+    bool hitTimeout = 2; // Set to true if search times out and a degraded response is returned
     TotalHits totalHits = 3;
     repeated Hit hits = 4;
     SearchState searchState = 5;
     repeated FacetResult facetResult = 6; ////Counts or aggregates for a single dimension
+    // Detailed stats returned when profile=true in request
+    ProfileResult profileResult = 7;
+    // Results from any additional document collectors
+    map<string, CollectorResult> collectorResults = 8;
+    // If this query hit the terminateAfter threshold specified in the request
+    bool terminatedEarly = 9;
 }
 
 message NumericRangeType {
@@ -475,7 +493,6 @@ message QueryRescorer {
     Query rescoreQuery = 1;
     double queryWeight = 2;
     double rescoreQueryWeight = 3;
-
 }
 
 // Defines a rescorer which is executed after the first search pass
@@ -485,4 +502,91 @@ message Rescorer {
         QueryRescorer queryRescorer = 2;
         PluginRescorer pluginRescorer = 3;
     }
+    // Must be unique for each Rescorer
+    string name = 4;
+}
+
+// Defines detailed profiling stats for queries that set profile=true
+message ProfileResult {
+    message AdditionalCollectorStats {
+        // Sum of all collection time
+        double collectTimeMs = 1;
+    }
+
+    message CollectorStats {
+        // If collection for this index slice was terminated early, such as by a timeout.
+        bool terminated = 1;
+        repeated SegmentStats segmentStats = 2;
+        // Total docs collected by this collector
+        int32 totalCollectedCount = 3;
+        // Sum of all segment collection time
+        double totalCollectTimeMs = 4;
+        // Stats for additional collection operations
+        map<string, AdditionalCollectorStats> additionalCollectorStats = 5;
+    }
+
+    message SegmentStats {
+        // Total docs in segment
+        int32 maxDoc = 1;
+        // Total live docs in segment
+        int32 numDocs = 2;
+        // How many docs were collected
+        int32 collectedCount = 3;
+        // Start time of segment processing in relation to the start of the search phase
+        double relativeStartTimeMs = 4;
+        // Collection duration
+        double collectTimeMs = 5;
+    }
+
+    message SearchStats {
+        // Total time for all document collection
+        double totalCollectTimeMs = 1;
+        // Total time to reduce results from all parallel search slices
+        double totalReduceTimeMs = 2;
+        repeated CollectorStats collectorStats = 3;
+    }
+
+    SearchStats searchStats = 1;
+    string parsedQuery = 2;
+    string rewrittenQuery = 3;
+    string drillDownQuery = 4;
+}
+
+//Definition of additional document collector.
+message Collector {
+    oneof Collectors {
+        //Collector for aggregating based on term values.
+        TermsCollector terms = 1;
+    }
+}
+
+//Definition of term aggregating collector.
+message TermsCollector {
+    oneof TermsSource {
+        // Placeholder: TODO implement
+        string field = 1;
+        //Use FacetScript definition to produce terms.
+        Script script = 2;
+    }
+    //Maximum number of top terms to return.
+    int32 size = 3;
+}
+
+message CollectorResult {
+    oneof CollectorResults {
+        //Result of collector that produces buckets and counts.
+        BucketResult bucketResult = 1;
+    }
+}
+
+message BucketResult {
+    message Bucket {
+        string key = 1;
+        int32 count = 2;
+    }
+    repeated Bucket buckets = 1;
+    //Number of unique buckets, including those not in the buckets list.
+    int32 totalBuckets = 2;
+    //Number of other collected counts not represented in the buckets' counts.
+    int32 totalOtherCounts = 3;
 }

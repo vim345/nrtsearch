@@ -6,6 +6,7 @@ import "yelp/nrtsearch/analysis.proto";
 import "yelp/nrtsearch/suggest.proto";
 import "google/api/annotations.proto";
 import "google/api/httpbody.proto";
+import "google/protobuf/any.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/struct.proto";
 
@@ -14,6 +15,8 @@ option java_multiple_files = true;
 option java_package = "com.yelp.nrtsearch.server.grpc";
 option java_outer_classname = "LuceneServerProto";
 option objc_class_prefix = "HLW";
+
+option go_package = "github.com/Yelp/nrtsearch";
 
 package luceneserver;
 
@@ -126,6 +129,15 @@ service LuceneServer {
       body: "*"
     };
     }
+
+    /* Search V2 */
+    rpc searchV2 (SearchRequest) returns (google.protobuf.Any) {
+        option (google.api.http) = {
+      post: "/v2/search"
+      body: "*"
+    };
+    }
+
     /* Delete documents */
     rpc delete (AddDocumentRequest) returns (AddDocumentResponse) {
         option (google.api.http) = {
@@ -241,6 +253,14 @@ service LuceneServer {
         };
     }
 
+    /* Backup warming queries to S3 */
+    rpc backupWarmingQueries (BackupWarmingQueriesRequest) returns (BackupWarmingQueriesResponse) {
+        option (google.api.http) = {
+      post: "/v1/backup_warming_queries"
+      body: "*"
+    };
+    }
+
     /* Gets the state of a started index, includes settings, live_settings, search schema, suggest schema */
     rpc state (StateRequest) returns (StateResponse) {
         option (google.api.http) = {
@@ -287,9 +307,30 @@ service LuceneServer {
     };
     }
 
+    /*
+    Forces merge policy to merge segments until there are <= maxNumSegments. The actual
+    merges to be executed are determined by the MergePolicy. This call will merge those
+    segments present in the index when the call started. If other threads are still
+    adding documents and flushing segments, those newly created segments will not be
+    merged unless you call forceMerge again.
+    */
     rpc forceMerge(ForceMergeRequest) returns (ForceMergeResponse) {
         option (google.api.http) = {
       post: "/v1/force_merge"
+      body: "*"
+    };
+    }
+
+    /*
+    Forces merging of all segments that have deleted documents. The actual merges to be
+    executed are determined by the MergePolicy. For example, the default TieredMergePolicy
+    will only pick a segment if the percentage of deleted docs is over 10%.
+    This method first flushes a new segment (if there are indexed documents), and applies
+    all buffered deletes.
+    */
+    rpc forceMergeDeletes(ForceMergeDeletesRequest) returns (ForceMergeDeletesResponse) {
+        option (google.api.http) = {
+      post: "/v1/force_merge_deletes"
       body: "*"
     };
     }
@@ -308,6 +349,8 @@ service ReplicationServer {
     }
     /* Receives a file as a stream in chunks. Typically issued by replica on primary */
     rpc recvRawFile (FileInfo) returns (stream RawFileChunk) {
+    }
+    rpc recvRawFileV2 (stream FileInfo) returns (stream RawFileChunk) {
     }
     /* Issued by primary on replica to inform it to start copying files either pre-warming (new merged segments) or when replica comes up first time */
     rpc copyFiles (CopyFiles) returns (stream TransferStatus) {
@@ -350,6 +393,22 @@ message LiveSettingsRequest {
     double indexRamBufferSizeMB = 5;
     //Max number of documents to add at a time.
     int32 addDocumentsMaxBufferLen = 6;
+    //Maximum number of documents allowed in a parallel search slice.
+    int32 sliceMaxDocs = 7;
+    //Maximum number of segments allowed in a parallel search slice.
+    int32 sliceMaxSegments = 8;
+    //Number of virtual shards to use for this index.
+    int32 virtualShards = 9;
+    //Maximum sized segment to produce during normal merging
+    int32 maxMergedSegmentMB = 10;
+    //Number of segments per tier used by TieredMergePolicy
+    int32 segmentsPerTier = 11;
+    //Timeout value to used when not specified in the search request.
+    double defaultSearchTimeoutSec = 12;
+    //Timeout check every value to use when not specified in the search request.
+    int32 defaultSearchTimeoutCheckEvery = 13;
+    //Terminate after value to use when not specified in the search request.
+    int32 defaultTerminateAfter = 14;
 }
 
 /* Response from Server to liveSettings */
@@ -458,7 +517,7 @@ message SettingsRequest {
     int32 concurrentMergeSchedulerMaxThreadCount = 5; // How many merge threads to allow at once
     int32 concurrentMergeSchedulerMaxMergeCount = 6; // Maximum backlog of pending merges before indexing threads are stalled
     SortFields indexSort = 7; // Index time sorting; can only be written once", SearchHandler.SORT_TYPE
-    bool indexVerbose = 8; // Turn on IndexWriter's infoStream (to stdout)
+    bool indexVerbose = 8 [deprecated = true]; // Deprecated, moved to lucene config. Turn on IndexWriter's infoStream (to stdout)
     bool indexMergeSchedulerAutoThrottle = 9; // Turn on/off the merge scheduler's auto throttling
     string normsFormat = 10; // Which NormsFormat should be used for all indexed fields. default: Lucene80NormsFormat
     // Base Directory implementation to use (NRTCachingDirectory will wrap this) either one of the core implementations (FSDirectory, MMapDirectory, NIOFSDirectory, SimpleFSDirectory, RAMDirectory (for temporary indices!) or a fully qualified path to a Directory implementation that has a public constructor taking a single File argument default: FSDirectory
@@ -511,6 +570,8 @@ message FacetHierarchyPath {
 
 message AddDocumentResponse {
     string genId = 1;
+    // Unique identifier for the primary instance that processed the request
+    string primaryId = 2;
 }
 
 message RefreshRequest {
@@ -529,6 +590,8 @@ message CommitResponse {
     /*  sequence number of the last operation in the commit.  All sequence numbers less than this value
     will be reflected in the commit, and all others will not.*/
     int64 gen = 1;
+    // Unique identifier for the primary instance that processed the request
+    string primaryId = 2;
 }
 
 message StatsRequest {
@@ -650,11 +713,22 @@ message BackupIndexRequest {
     string serviceName = 2; // remote storage namespace qualifier for service
     string resourceName = 3; //remote storage namespace qualifier for resource e.g. indexName
     bool completeDirectory = 4; // backup complete directory including all current snapshots if true (may backup corrupt segments if backup is created while indexing is happening), otherwise only backup the required segments and segment files
+    bool stream = 5; // if the built tar should be directly streamed to s3, instead of being written to a file first (experimental)
 }
 
 message BackupIndexResponse {
     string dataVersionHash = 1; //version identifier for data on s3
     string metadataVersionHash = 2; //version identifier for metadata on s3
+}
+
+message BackupWarmingQueriesRequest {
+    string index = 1; // Index whose warming queries to backup
+    string serviceName = 2; // remote storage namespace qualifier for service
+    int32 numQueriesThreshold = 3; // optional; minimum # of queries required to backup warming queries
+    int32 uptimeMinutesThreshold = 4; // optional; minimum # of minutes uptime to backup warming queries
+}
+
+message BackupWarmingQueriesResponse {
 }
 
 message DeleteIndexBackupRequest {
@@ -686,6 +760,7 @@ message IndexStatsResponse {
 message RestoreIndex {
     string serviceName = 1; // remote storage namespace qualifier for service
     string resourceName = 2; //remote storage namespace qualifier for resource e.g. indexName
+    bool deleteExistingData = 3; // delete any existing data for the index
 }
 
 message StateRequest {
@@ -761,10 +836,16 @@ message FileInfo {
     string fileName = 1; // Name of the file the replica wants primary to send
     int64 fpStart = 2; // Starting offset in the file primary should start sending bytes from:
     string indexName = 3; //index name these files belong to
+    // sequence number to ack, only used for acked file copy
+    int32 ackSeqNum = 4;
 }
 
 message RawFileChunk {
     bytes content = 1; //raw contents of file
+    // sequence number for this chunk, only used for acked file copy
+    int32 seqNum = 2;
+    // if this chunk should be acked, only used for acked file copy
+    bool ack = 3;
 }
 
 enum TransferStatusCode {
@@ -836,6 +917,19 @@ message ForceMergeResponse {
     enum Status {
         FORCE_MERGE_COMPLETED = 0;
         FORCE_MERGE_SUBMITTED = 1;
+    }
+    Status status = 1;
+}
+
+message ForceMergeDeletesRequest {
+    string indexName = 1; // Index whose segments having deletes must be force merged
+    bool doWait = 2; // If true, waits until the force merge is completed before returning a response. Otherwise starts force merging in async and returns a response.
+}
+
+message ForceMergeDeletesResponse {
+    enum Status {
+        FORCE_MERGE_DELETES_COMPLETED = 0;
+        FORCE_MERGE_DELETES_SUBMITTED = 1;
     }
     Status status = 1;
 }

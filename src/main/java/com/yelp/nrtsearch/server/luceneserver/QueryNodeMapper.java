@@ -29,6 +29,7 @@ import com.yelp.nrtsearch.server.luceneserver.script.ScoreScript;
 import com.yelp.nrtsearch.server.luceneserver.script.ScriptService;
 import com.yelp.nrtsearch.server.utils.ScriptParamsUtils;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.index.Term;
@@ -114,6 +115,8 @@ public class QueryNodeMapper {
         return getGeoRadiusQuery(query.getGeoRadiusQuery(), state);
       case FUNCTIONFILTERQUERY:
         return getFunctionFilterQuery(query.getFunctionFilterQuery(), state);
+      case QUERYNODE_NOT_SET:
+        return new MatchAllDocsQuery();
       default:
         throw new UnsupportedOperationException(
             "Unsupported query type received: " + query.getQueryNodeCase());
@@ -159,13 +162,21 @@ public class QueryNodeMapper {
         new BooleanQuery.Builder()
             .setMinimumNumberShouldMatch(booleanQuery.getMinimumNumberShouldMatch());
 
+    AtomicBoolean allMustNot = new AtomicBoolean(true);
     booleanQuery
         .getClausesList()
         .forEach(
-            clause ->
-                builder.add(
-                    getQuery(clause.getQuery(), state), occurMapping.get(clause.getOccur())));
+            clause -> {
+              com.yelp.nrtsearch.server.grpc.BooleanClause.Occur occur = clause.getOccur();
+              builder.add(getQuery(clause.getQuery(), state), occurMapping.get(occur));
+              if (occur != com.yelp.nrtsearch.server.grpc.BooleanClause.Occur.MUST_NOT) {
+                allMustNot.set(false);
+              }
+            });
 
+    if (allMustNot.get()) {
+      builder.add(new MatchAllDocsQuery(), BooleanClause.Occur.FILTER);
+    }
     return builder.build();
   }
 
@@ -181,6 +192,7 @@ public class QueryNodeMapper {
       com.yelp.nrtsearch.server.grpc.FunctionScoreQuery functionScoreQuery, IndexState state) {
     ScoreScript.Factory scriptFactory =
         ScriptService.getInstance().compile(functionScoreQuery.getScript(), ScoreScript.CONTEXT);
+
     Map<String, Object> params =
         ScriptParamsUtils.decodeParams(functionScoreQuery.getScript().getParamsMap());
     return new FunctionScoreQuery(

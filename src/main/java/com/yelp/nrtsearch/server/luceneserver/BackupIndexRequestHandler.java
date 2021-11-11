@@ -85,7 +85,8 @@ public class BackupIndexRequestHandler implements Handler<BackupIndexRequest, Ba
             backupIndexRequest.getServiceName(),
             backupIndexRequest.getResourceName(),
             indexState,
-            backupIndexResponseBuilder);
+            backupIndexResponseBuilder,
+            backupIndexRequest.getStream());
       } else {
         indexState.commit();
 
@@ -117,7 +118,8 @@ public class BackupIndexRequestHandler implements Handler<BackupIndexRequest, Ba
             indexState,
             backupIndexResponseBuilder,
             segmentFiles,
-            stateDirectory);
+            stateDirectory,
+            backupIndexRequest.getStream());
       }
 
     } catch (IOException e) {
@@ -152,9 +154,10 @@ public class BackupIndexRequestHandler implements Handler<BackupIndexRequest, Ba
     }
     ShardState state = indexState.shards.entrySet().iterator().next().getValue();
     SearcherTaxonomyManager.SearcherAndTaxonomy searcherAndTaxonomy = null;
+    IndexReader indexReader = null;
     try {
       searcherAndTaxonomy = state.acquire();
-      IndexReader indexReader =
+      indexReader =
           DirectoryReader.openIfChanged(
               (DirectoryReader) searcherAndTaxonomy.searcher.getIndexReader(),
               state.snapshots.getIndexCommit(snapshot.indexGen));
@@ -166,6 +169,9 @@ public class BackupIndexRequestHandler implements Handler<BackupIndexRequest, Ba
     } finally {
       if (searcherAndTaxonomy != null) {
         state.release(searcherAndTaxonomy);
+      }
+      if (indexReader != null) {
+        indexReader.close();
       }
     }
   }
@@ -281,7 +287,8 @@ public class BackupIndexRequestHandler implements Handler<BackupIndexRequest, Ba
       IndexState indexState,
       BackupIndexResponse.Builder backupIndexResponseBuilder,
       Collection<String> filesToInclude,
-      Collection<String> parentDirectoriesToInclude)
+      Collection<String> parentDirectoriesToInclude,
+      boolean stream)
       throws IOException {
     String resourceData = IndexBackupUtils.getResourceData(resourceName);
     String versionHash =
@@ -290,18 +297,20 @@ public class BackupIndexRequestHandler implements Handler<BackupIndexRequest, Ba
             resourceData,
             indexState.rootDir,
             filesToInclude,
-            parentDirectoriesToInclude);
+            parentDirectoriesToInclude,
+            stream);
     archiver.blessVersion(serviceName, resourceData, versionHash);
     backupIndexResponseBuilder.setDataVersionHash(versionHash);
 
-    uploadMetadata(serviceName, resourceName, indexState, backupIndexResponseBuilder);
+    uploadMetadata(serviceName, resourceName, indexState, backupIndexResponseBuilder, stream);
   }
 
   public void uploadMetadata(
       String serviceName,
       String resourceName,
       IndexState indexState,
-      BackupIndexResponse.Builder backupIndexResponseBuilder)
+      BackupIndexResponse.Builder backupIndexResponseBuilder,
+      boolean stream)
       throws IOException {
     String resourceMetadata = IndexBackupUtils.getResourceMetadata(resourceName);
     String versionHash =
@@ -310,7 +319,8 @@ public class BackupIndexRequestHandler implements Handler<BackupIndexRequest, Ba
             resourceMetadata,
             indexState.globalState.stateDir,
             Collections.emptyList(),
-            Collections.emptyList());
+            Collections.emptyList(),
+            stream);
     archiver.blessVersion(serviceName, resourceMetadata, versionHash);
     backupIndexResponseBuilder.setMetadataVersionHash(versionHash);
   }
