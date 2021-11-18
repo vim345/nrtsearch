@@ -45,7 +45,7 @@ jobs:
     - name: Commit and push badge
       if: ${{ github.event_name != 'pull_request' }}
       run: |
-        cd badges
+        cd .github/badges
         if [[ `git status --porcelain *.svg` ]]; then
           git config --global user.name github_actions
           git add *.svg
