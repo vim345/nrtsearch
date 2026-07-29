@@ -1,0 +1,4 @@
+business_id,ad_bids.ad_bid_id,ad_bids.campaign_id,ad_bids.max_bid_value,ad_bids.dayparting_hours_index
+1,1,100,1.5,8
+2,3,300,3.5,10
+3,5,500,5.5,12

@@ -1,0 +1,17 @@
+{
+  "indexName": "childFieldTest",
+  "field": [
+    {
+      "name": "ad_bids",
+      "childFields": [
+        {
+          "name": "dayparting_hours_index",
+          "type": "INT",
+          "search": true,
+          "storeDocValues": true,
+          "multiValued": true
+        }
+      ]
+    }
+  ]
+}

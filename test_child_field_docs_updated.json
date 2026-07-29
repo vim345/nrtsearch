@@ -1,0 +1,3 @@
+{"business_id": "1", "ad_bids": "{\"ad_bid_id\": \"1\", \"campaign_id\": \"100\", \"max_bid_value\": \"1.5\", \"dayparting_hours_index\": \"8\"}"}
+{"business_id": "2", "ad_bids": "{\"ad_bid_id\": \"3\", \"campaign_id\": \"300\", \"max_bid_value\": \"3.5\", \"dayparting_hours_index\": \"10\"}"}
+{"business_id": "3", "ad_bids": "{\"ad_bid_id\": \"5\", \"campaign_id\": \"500\", \"max_bid_value\": \"5.5\", \"dayparting_hours_index\": \"12\"}"}

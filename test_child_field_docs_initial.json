@@ -1,0 +1,2 @@
+{"business_id": "1", "ad_bids": "{\"ad_bid_id\": \"1\", \"campaign_id\": \"100\", \"max_bid_value\": \"1.5\"}"}
+{"business_id": "2", "ad_bids": "{\"ad_bid_id\": \"3\", \"campaign_id\": \"300\", \"max_bid_value\": \"3.5\"}"}

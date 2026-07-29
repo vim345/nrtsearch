@@ -1,0 +1,17 @@
+{
+  "indexName": "childFieldTest",
+  "startHit": 0,
+  "topHits": 100,
+  "retrieveFields": ["business_id", "ad_bids.ad_bid_id", "ad_bids.campaign_id", "ad_bids.max_bid_value", "ad_bids.dayparting_hours_index"],
+  "query": {
+    "nestedQuery": {
+      "path": "ad_bids",
+      "query": {
+        "termQuery": {
+          "field": "ad_bids.dayparting_hours_index",
+          "intValue": 12
+        }
+      }
+    }
+  }
+}

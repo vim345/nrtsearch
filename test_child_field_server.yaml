@@ -1,0 +1,8 @@
+nodeName: test_child_field_node
+hostName: localhost
+port: 8765
+replicationPort: 8766
+stateDir: test_child_field_state
+indexDir: test_child_field_index
+deadlineCancellation: false
+restoreState: false

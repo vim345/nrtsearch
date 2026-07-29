@@ -1,0 +1,39 @@
+{
+  "indexName": "childFieldTest",
+  "field": [
+    {
+      "name": "business_id",
+      "type": "LONG",
+      "storeDocValues": true,
+      "search": true
+    },
+    {
+      "name": "ad_bids",
+      "type": "OBJECT",
+      "storeDocValues": true,
+      "search": true,
+      "multiValued": true,
+      "nestedDoc": true,
+      "childFields": [
+        {
+          "name": "ad_bid_id",
+          "type": "INT",
+          "search": true,
+          "storeDocValues": true
+        },
+        {
+          "name": "campaign_id",
+          "type": "INT",
+          "search": true,
+          "storeDocValues": true
+        },
+        {
+          "name": "max_bid_value",
+          "type": "FLOAT",
+          "search": true,
+          "storeDocValues": true
+        }
+      ]
+    }
+  ]
+}

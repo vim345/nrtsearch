@@ -1,0 +1,9 @@
+{
+  "indexName": "childFieldTest",
+  "startHit": 0,
+  "topHits": 100,
+  "retrieveFields": ["business_id", "ad_bids.ad_bid_id", "ad_bids.campaign_id", "ad_bids.max_bid_value"],
+  "query": {
+    "matchAllQuery": {}
+  }
+}

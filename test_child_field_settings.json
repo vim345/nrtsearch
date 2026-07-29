@@ -1,0 +1,6 @@
+{
+  "nrtCachingDirectoryMaxSizeMB": 6.0,
+  "indexMergeSchedulerAutoThrottle": false,
+  "concurrentMergeSchedulerMaxThreadCount": 8,
+  "concurrentMergeSchedulerMaxMergeCount": 16
+}
